@@ -8,6 +8,7 @@ Why?
 Testing against a live mongodb makes your tests fragile.
 
 Best-case, mocks only provide partial quality assurance while adding maintenance costs.
+
 Worst-case, they're a tautological waste of time, effort and code.
 
 Features (planned)
