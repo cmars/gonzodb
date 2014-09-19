@@ -14,3 +14,8 @@ Features (planned)
 * Implements enough of a subset of the mongodb protocol to fool mgo for most purposes.
 * Easy to set up and tear down in unit tests.
 * Can easily introspect or dump on contents after a test is run.
+
+Resources
+=========
+* http://docs.mongodb.org/meta-driver/latest/legacy/mongodb-wire-protocol/
+* https://github.com/bwaldvogel/mongo-java-server
