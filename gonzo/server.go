@@ -64,10 +64,13 @@ func (s *Server) Stop() {
 }
 
 func errReply(err error) bson.D {
-	return bson.D{
-		{"errmsg", err.Error()},
-		{"ok", 0},
+	if err != nil {
+		return bson.D{
+			{"errmsg", err.Error()},
+			{"ok", 0},
+		}
 	}
+	return markOk(nil)
 }
 
 func markOk(msg bson.D) bson.D {
@@ -104,7 +107,14 @@ func (s *Server) handle(c net.Conn) {
 		//case OpReply:
 		//case OpMsg:
 		//case OpUpdate:
-		//case OpInsert:
+		case OpInsert:
+			insert, err := NewOpInsertMsg(h)
+			if err != nil {
+				respError(c, h.RequestID, err)
+				return
+			}
+			s.Backend.HandleInsert(c, insert)
+			continue
 		case OpQuery:
 			query, err := NewOpQueryMsg(h)
 			if err != nil {

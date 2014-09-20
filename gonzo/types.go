@@ -223,6 +223,51 @@ func NewOpQueryMsg(h *Header) (*OpQueryMsg, error) {
 	return m, nil
 }
 
+type InsertFlags int32
+
+const (
+	InsertFlagContinueOnError = 1 << 0
+)
+
+type OpInsertMsg struct {
+	*Header
+
+	// Bit vector of query options.
+	Flags InsertFlags
+
+	// "dbname.collectionname"
+	FullCollectionName string
+
+	// one or more documents to insert into the collection
+	Docs []bson.M
+}
+
+func NewOpInsertMsg(h *Header) (*OpInsertMsg, error) {
+	m := &OpInsertMsg{Header: h}
+	b := h.Contents
+
+	flags, b, ok := readInt32(b)
+	if !ok {
+		return nil, errTruncMsg
+	} else {
+		m.Flags = InsertFlags(flags)
+	}
+
+	if m.FullCollectionName, b, ok = readCstring(b); !ok {
+		return nil, errTruncMsg
+	}
+
+	var err error
+	for len(b) > 0 {
+		mdoc := make(bson.M)
+		if b, err = readBsonDoc(b, mdoc); err != nil {
+			return nil, err
+		}
+		m.Docs = append(m.Docs, mdoc)
+	}
+	return m, nil
+}
+
 type OpReplyMsg struct {
 	*Header
 
