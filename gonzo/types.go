@@ -168,10 +168,26 @@ type OpQueryMsg struct {
 	NumberToReturn int32
 
 	// query object.  See below for details.
-	Doc map[string]interface{}
+	Doc bson.D
 
 	// Optional. Selector indicating the fields to return.
-	ReturnFieldsSelector map[string]int
+	ReturnFieldsSelector bson.D
+}
+
+func (m *OpQueryMsg) Command() (cmd string, arg interface{}) {
+	for _, kv := range m.Doc {
+		return kv.Name, kv.Value
+	}
+	return "", nil
+}
+
+func (m *OpQueryMsg) Get(key string) (interface{}, bool) {
+	for _, kv := range m.Doc {
+		if kv.Name == key {
+			return kv.Value, true
+		}
+	}
+	return nil, false
 }
 
 func NewOpQueryMsg(h *Header) (*OpQueryMsg, error) {
@@ -196,12 +212,10 @@ func NewOpQueryMsg(h *Header) (*OpQueryMsg, error) {
 	}
 
 	var err error
-	m.Doc = make(map[string]interface{})
 	if b, err = readBsonDoc(b, &m.Doc); err != nil {
 		return nil, err
 	}
 	if len(b) > 0 {
-		m.ReturnFieldsSelector = make(map[string]int)
 		if b, err = readBsonDoc(b, &m.ReturnFieldsSelector); err != nil {
 			return nil, err
 		}

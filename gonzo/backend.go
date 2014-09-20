@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"strings"
 
 	"gopkg.in/mgo.v2/bson"
 	"gopkg.in/tomb.v2"
@@ -11,15 +12,68 @@ import (
 
 type Backend interface {
 	HandleQuery(c net.Conn, query *OpQueryMsg)
+
+	DBNames() []string
+	DB(name string) DB
+}
+
+type DB interface {
+	Empty() bool
+	CNames() []string
+	C(name string) Collection
+}
+
+type Collection interface {
+	Id(id string) interface{}
+	All() []interface{}
+	Match(pattern bson.M) []interface{}
 }
 
 type MemoryCollection struct {
-	contents map[string]bson.D
+	docs []interface{}
 }
 
 type MemoryDB struct {
-	name        string
 	collections map[string]*MemoryCollection
+}
+
+func (db *MemoryDB) Empty() bool {
+	return len(db.collections) == 0
+}
+
+func (db *MemoryDB) CNames() (result []string) {
+	for cname, _ := range db.collections {
+		result = append(result, cname)
+	}
+	return result
+}
+
+func (db *MemoryDB) C(name string) Collection {
+	result, ok := db.collections[name]
+	if !ok {
+		result = &MemoryCollection{}
+		db.collections[name] = result
+	}
+	return result
+}
+
+func (c *MemoryCollection) Id(id string) interface{} {
+	for _, item := range c.docs {
+		mitem := item.(bson.M)
+		if match, ok := mitem["_id"]; ok && match == id {
+			return item
+		}
+	}
+	return nil
+}
+
+func (c *MemoryCollection) All() []interface{} {
+	return c.docs
+}
+
+func (c *MemoryCollection) Match(pattern bson.M) []interface{} {
+	// TODO: implement me
+	return c.docs
 }
 
 type MemoryBackend struct {
@@ -34,6 +88,22 @@ func NewMemoryBackend(t *tomb.Tomb) *MemoryBackend {
 	}
 }
 
+func (b *MemoryBackend) DBNames() (result []string) {
+	for dbname, _ := range b.dbs {
+		result = append(result, dbname)
+	}
+	return result
+}
+
+func (b *MemoryBackend) DB(name string) DB {
+	result, ok := b.dbs[name]
+	if !ok {
+		result = &MemoryDB{}
+		b.dbs[name] = result
+	}
+	return result
+}
+
 func (b *MemoryBackend) HandleQuery(c net.Conn, query *OpQueryMsg) {
 	if query.FullCollectionName == "admin.$cmd" {
 		err := b.handleAdminCommand(c, query)
@@ -42,16 +112,54 @@ func (b *MemoryBackend) HandleQuery(c net.Conn, query *OpQueryMsg) {
 		}
 		return
 	}
-	respError(c, query.RequestID, fmt.Errorf("unsupported query: %v", query))
+
+	fields := strings.SplitN(query.FullCollectionName, ".", 2)
+	if len(fields) < 2 {
+		respError(c, query.RequestID, fmt.Errorf("malformed full collection name %q", query.FullCollectionName))
+		return
+	}
+	dbname, cname := fields[0], fields[1]
+	if strings.HasPrefix(cname, "system.") {
+		b.handleSystemQuery(c, query, dbname, cname)
+		return
+	}
+	db := b.DB(dbname)
+	coll := db.C(cname)
+	var results []interface{}
+	if match, ok := query.Get("$query"); ok {
+		if matchDoc, ok := match.(bson.M); ok {
+			results = append(results, coll.Match(matchDoc)...)
+		} else {
+			respError(c, query.RequestID, fmt.Errorf("unexpected $query type %v", match))
+			return
+		}
+	} else {
+		results = append(results, coll.All()...)
+	}
+	respDoc(c, query.RequestID, results...)
+}
+
+// TODO: implement Collection interface instead
+func (b *MemoryBackend) handleSystemQuery(c net.Conn, query *OpQueryMsg, dbname, cname string) {
+	log.Println("system query:", dbname, cname, query.Doc)
+	switch cname {
+	case "system.namespaces":
+		var result []interface{}
+		for _, name := range b.DB(dbname).CNames() {
+			result = append(result, bson.D{{"name", name}})
+		}
+		respDoc(c, query.RequestID, result...)
+		return
+	}
+	respError(c, query.RequestID, fmt.Errorf(
+		"unsupported system query on %s: %v", query.FullCollectionName, query.Doc))
 }
 
 func (b *MemoryBackend) handleAdminCommand(c net.Conn, query *OpQueryMsg) error {
-	if _, ok := query.Doc["whatsmyuri"]; ok {
-		return respDoc(c, query.RequestID, bson.D{{"you", c.RemoteAddr().String()}})
-
-	} else if logName, ok := query.Doc["getLog"]; ok {
+	switch cmd, arg := query.Command(); cmd {
+	case "getLog":
 		var msg bson.D
-		switch logName {
+		switch logName := arg.(string); logName {
 		case "*":
 			msg = markOk(bson.D{{"names", []string{"startupWarnings"}}})
 		case "startupWarnings":
@@ -63,14 +171,25 @@ func (b *MemoryBackend) handleAdminCommand(c net.Conn, query *OpQueryMsg) error 
 			msg = errReply(fmt.Errorf("log not found: %q", logName))
 		}
 		return respDoc(c, query.RequestID, msg)
-
-	} else if _, ok := query.Doc["replSetGetStatus"]; ok {
+	case "listDatabases":
+		var dbinfos []bson.D
+		for _, dbname := range b.DBNames() {
+			dbinfos = append(dbinfos, bson.D{
+				{"name", dbname},
+				{"empty", b.DB(dbname).Empty()},
+			})
+		}
+		return respDoc(c, query.RequestID, markOk(bson.D{
+			{"databases", dbinfos},
+		}))
+	case "replSetGetStatus":
 		return respError(c, query.RequestID, fmt.Errorf("not running with --replSet"))
-
-	} else if _, ok := query.Doc["shutdown"]; ok {
+	case "shutdown":
 		log.Println("shutdown requested")
 		b.t.Kill(nil)
 		return c.Close()
+	case "whatsmyuri":
+		return respDoc(c, query.RequestID, bson.D{{"you", c.RemoteAddr().String()}})
 	}
 	return respError(c, query.RequestID, fmt.Errorf("unsupported admin command: %v", query))
 }

@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"os"
 
 	"gopkg.in/mgo.v2/bson"
 	"gopkg.in/tomb.v2"
@@ -33,6 +34,7 @@ func NewServer(ln net.Listener) *Server {
 
 func (s *Server) Start() {
 	s.t.Go(s.run)
+	log.Printf("gonzodb running pid=%d addr=%q", os.Getpid(), s.ln.Addr())
 }
 
 func (s *Server) Wait() error {
@@ -72,8 +74,8 @@ func markOk(msg bson.D) bson.D {
 	return append(msg, bson.DocElem{"ok", 1})
 }
 
-func respDoc(w io.Writer, requestID int32, doc bson.D) error {
-	resp := NewOpReplyMsg(requestID, doc)
+func respDoc(w io.Writer, requestID int32, docs ...interface{}) error {
+	resp := NewOpReplyMsg(requestID, docs...)
 	return resp.Write(w)
 }
 
