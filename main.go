@@ -1,9 +1,18 @@
 package main
 
-import "github.com/cmars/gonzodb/gonzo"
+import (
+	"log"
+	"os"
+
+	"github.com/cmars/gonzodb/gonzo"
+)
 
 func die(err error) {
-	panic(err)
+	if err != nil {
+		log.Println(err)
+		os.Exit(1)
+	}
+	os.Exit(0)
 }
 
 func main() {
