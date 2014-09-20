@@ -10,47 +10,6 @@ import (
 	"gopkg.in/tomb.v2"
 )
 
-type Backend interface {
-	HandleQuery(c net.Conn, query *OpQueryMsg)
-}
-
-type MemoryBackend struct {
-}
-
-func (b *MemoryBackend) HandleQuery(c net.Conn, query *OpQueryMsg) {
-	if query.FullCollectionName == "admin.$cmd" {
-		err := b.handleAdminCommand(c, query)
-		if err != nil {
-			log.Println(err)
-		}
-		return
-	}
-	respError(c, query.RequestID, fmt.Errorf("unsupported query: %v", query))
-}
-
-func (b *MemoryBackend) handleAdminCommand(c net.Conn, query *OpQueryMsg) error {
-	if v, ok := query.QueryDoc["whatsmyuri"]; ok && v == 1 {
-		return respDoc(c, query.RequestID, bson.D{{"you", c.RemoteAddr().String()}})
-	} else if logName, ok := query.QueryDoc["getLog"]; ok {
-		var msg bson.D
-		switch logName {
-		case "*":
-			msg = markOk(bson.D{{"names", []string{"startupWarnings"}}})
-		case "startupWarnings":
-			msg = markOk(bson.D{
-				{"totalLinesWritten", 0},
-				{"log", []string{}},
-			})
-		default:
-			msg = errReply(fmt.Errorf("log not found: %q", logName))
-		}
-		return respDoc(c, query.RequestID, msg)
-	} else if _, ok := query.QueryDoc["replSetGetStatus"]; ok {
-		return respError(c, query.RequestID, fmt.Errorf("not running with --replSet"))
-	}
-	return respError(c, query.RequestID, fmt.Errorf("unsupported admin command: %v", query))
-}
-
 type Server struct {
 	Backend Backend
 
@@ -67,10 +26,9 @@ func NewServerAddr(netname, addr string) (*Server, error) {
 }
 
 func NewServer(ln net.Listener) *Server {
-	return &Server{
-		Backend: &MemoryBackend{},
-		ln:      ln,
-	}
+	s := &Server{ln: ln}
+	s.Backend = NewMemoryBackend(&s.t)
+	return s
 }
 
 func (s *Server) Start() {

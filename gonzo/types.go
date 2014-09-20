@@ -168,7 +168,7 @@ type OpQueryMsg struct {
 	NumberToReturn int32
 
 	// query object.  See below for details.
-	QueryDoc map[string]interface{}
+	Doc map[string]interface{}
 
 	// Optional. Selector indicating the fields to return.
 	ReturnFieldsSelector map[string]int
@@ -196,8 +196,8 @@ func NewOpQueryMsg(h *Header) (*OpQueryMsg, error) {
 	}
 
 	var err error
-	m.QueryDoc = make(map[string]interface{})
-	if b, err = readBsonDoc(b, &m.QueryDoc); err != nil {
+	m.Doc = make(map[string]interface{})
+	if b, err = readBsonDoc(b, &m.Doc); err != nil {
 		return nil, err
 	}
 	if len(b) > 0 {
