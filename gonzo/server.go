@@ -52,7 +52,7 @@ func (s *Server) run() error {
 		}
 	})
 	<-s.t.Dying()
-	s.t.Kill(nil)
+	s.ln.Close()
 	return nil
 }
 
@@ -86,6 +86,12 @@ func respError(w io.Writer, requestID int32, err error) error {
 func (s *Server) handle(c net.Conn) {
 	defer c.Close()
 	for {
+		select {
+		case <-s.t.Dying():
+			return
+		default:
+		}
+
 		h := &Header{}
 		err := h.Read(c)
 		if err != nil {

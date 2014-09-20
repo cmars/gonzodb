@@ -68,8 +68,9 @@ func (b *MemoryBackend) handleAdminCommand(c net.Conn, query *OpQueryMsg) error 
 		return respError(c, query.RequestID, fmt.Errorf("not running with --replSet"))
 
 	} else if _, ok := query.Doc["shutdown"]; ok {
+		log.Println("shutdown requested")
 		b.t.Kill(nil)
-		return respDoc(c, query.RequestID, markOk(nil))
+		return c.Close()
 	}
 	return respError(c, query.RequestID, fmt.Errorf("unsupported admin command: %v", query))
 }
