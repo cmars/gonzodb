@@ -7,7 +7,6 @@ import (
 	gc "gopkg.in/check.v1"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
-	//"gopkg.in/mgo.v2/bson"
 
 	"github.com/cmars/gonzodb/gonzo"
 )
