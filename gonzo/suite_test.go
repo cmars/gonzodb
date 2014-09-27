@@ -54,3 +54,36 @@ func (s *gonzoSuite) TestInsertQuerySingle(c *gc.C) {
 	_, ok := result[0]["_id"].(bson.ObjectId)
 	c.Assert(ok, gc.Equals, true)
 }
+
+func (s *gonzoSuite) TestInsertQueryMatch(c *gc.C) {
+	err := s.session.DB("db1").C("c1").Insert(
+		bson.D{{"artist", "ed hall"}, {"label", "trance syndicate"}, {"venue", "liberty lunch"}})
+	c.Assert(err, gc.IsNil)
+	err = s.session.DB("db1").C("c1").Insert(
+		bson.D{{"artist", "cherubs"}, {"label", "trance syndicate"}, {"venue", "cavity club"}})
+	c.Assert(err, gc.IsNil)
+	err = s.session.DB("db1").C("c1").Insert(
+		bson.D{{"artist", "the jesus lizard"}, {"label", "touch & go"}, {"venue", "emo's"}})
+	c.Assert(err, gc.IsNil)
+
+	var result []bson.M
+	err = s.session.DB("db1").C("c1").Find(bson.M{"artist": "ed hall"}).All(&result)
+	c.Assert(err, gc.IsNil)
+	c.Assert(result, gc.HasLen, 1)
+
+	err = s.session.DB("db1").C("c1").Find(bson.M{"label": "trance syndicate"}).All(&result)
+	c.Assert(err, gc.IsNil)
+	c.Assert(result, gc.HasLen, 2)
+	for i, m := range result {
+		c.Assert(m["label"], gc.Equals, "trance syndicate")
+		if i > 0 {
+			c.Assert(m["artist"], gc.Not(gc.DeepEquals), result[i-1]["artist"])
+			c.Assert(m["venue"], gc.Not(gc.DeepEquals), result[i-1]["venue"])
+			c.Assert(m["_id"], gc.Not(gc.DeepEquals), result[i-1]["_id"])
+		}
+	}
+
+	err = s.session.DB("db1").C("c1").Find(nil).All(&result)
+	c.Assert(err, gc.IsNil)
+	c.Assert(result, gc.HasLen, 3)
+}

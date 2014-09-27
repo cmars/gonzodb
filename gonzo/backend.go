@@ -83,6 +83,7 @@ func (c *MemoryCollection) Id(id string) interface{} {
 }
 
 func (c *MemoryCollection) All() (result []interface{}) {
+	fmt.Println("all called")
 	for _, doc := range c.docs {
 		result = append(result, doc)
 	}
@@ -90,6 +91,7 @@ func (c *MemoryCollection) All() (result []interface{}) {
 }
 
 func (c *MemoryCollection) Match(pattern bson.M) (result []interface{}) {
+	fmt.Println("match called")
 	for _, doc := range c.docs {
 		if isPatternMatch(doc, pattern) {
 			result = append(result, doc)
@@ -185,6 +187,7 @@ func (b *MemoryBackend) HandleQuery(c net.Conn, query *OpQueryMsg) {
 	coll := db.C(cname)
 
 	var results []interface{}
+	fmt.Println(query)
 	if match, ok := query.Get("$query"); ok {
 		if matchDoc, ok := match.(bson.M); ok {
 			results = append(results, coll.Match(matchDoc)...)
@@ -192,8 +195,10 @@ func (b *MemoryBackend) HandleQuery(c net.Conn, query *OpQueryMsg) {
 			respError(c, query.RequestID, fmt.Errorf("unexpected $query type %v", match))
 			return
 		}
-	} else {
+	} else if len(query.Doc) == 0 {
 		results = append(results, coll.All()...)
+	} else {
+		results = append(results, coll.Match(query.Doc.Map())...)
 	}
 	respDoc(c, query.RequestID, results...)
 }
