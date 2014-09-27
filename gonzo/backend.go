@@ -1,6 +1,8 @@
 package gonzo
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"net"
@@ -35,7 +37,7 @@ type Collection interface {
 }
 
 type MemoryCollection struct {
-	docs []interface{}
+	docs map[string]bson.M
 }
 
 type MemoryDB struct {
@@ -61,7 +63,7 @@ func (db *MemoryDB) CNames() (result []string) {
 func (db *MemoryDB) C(name string) Collection {
 	result, ok := db.collections[name]
 	if !ok {
-		result = &MemoryCollection{}
+		result = &MemoryCollection{docs: make(map[string]bson.M)}
 		db.collections[name] = result
 	}
 	return result
@@ -72,7 +74,7 @@ func (db *MemoryDB) SetLastError(err error) { db.lastErr = err }
 
 func (c *MemoryCollection) Id(id string) interface{} {
 	for _, item := range c.docs {
-		mitem := item.(bson.M)
+		mitem := item
 		if match, ok := mitem["_id"]; ok && match == id {
 			return item
 		}
@@ -80,13 +82,30 @@ func (c *MemoryCollection) Id(id string) interface{} {
 	return nil
 }
 
-func (c *MemoryCollection) All() []interface{} {
-	return c.docs
+func (c *MemoryCollection) All() (result []interface{}) {
+	for _, doc := range c.docs {
+		result = append(result, doc)
+	}
+	return result
 }
 
-func (c *MemoryCollection) Match(pattern bson.M) []interface{} {
-	// TODO: implement me
-	return c.docs
+func (c *MemoryCollection) Match(pattern bson.M) (result []interface{}) {
+	for _, doc := range c.docs {
+		if isPatternMatch(doc, pattern) {
+			result = append(result, doc)
+		}
+	}
+	return result
+}
+
+func isPatternMatch(doc, pattern bson.M) bool {
+	for matchKey, matchValue := range pattern {
+		value, ok := doc[matchKey]
+		if !ok || matchValue != value {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *MemoryCollection) Insert(doc interface{}) error {
@@ -94,7 +113,15 @@ func (c *MemoryCollection) Insert(doc interface{}) error {
 	if !ok {
 		return fmt.Errorf("cannot insert instance of this type: %v", doc)
 	}
-	c.docs = append(c.docs, mdoc)
+	var idStr string
+	if id, ok := mdoc["_id"]; ok {
+		idStr = id.(fmt.Stringer).String()
+	} else {
+		oid := bson.NewObjectId()
+		mdoc["_id"] = oid
+		idStr = oid.String()
+	}
+	c.docs[idStr] = mdoc
 	return nil
 }
 
@@ -219,6 +246,8 @@ func (b *MemoryBackend) handleSystemQuery(c net.Conn, query *OpQueryMsg, dbname,
 
 func (b *MemoryBackend) handleDBCommand(c net.Conn, db DB, query *OpQueryMsg) error {
 	switch cmd, _ := query.Command(); cmd {
+	case "getLastError":
+		fallthrough
 	case "getlasterror":
 		return respError(c, query.RequestID, db.LastError())
 	}
@@ -260,6 +289,19 @@ func (b *MemoryBackend) handleAdminCommand(c net.Conn, query *OpQueryMsg) error 
 		return c.Close()
 	case "whatsmyuri":
 		return respDoc(c, query.RequestID, bson.D{{"you", c.RemoteAddr().String()}})
+	case "ismaster":
+		return respDoc(c, query.RequestID, markOk(bson.D{{"ismaster", true}}))
+	case "getnonce":
+		nonce := make([]byte, 32)
+		_, err := rand.Reader.Read(nonce[:])
+		if err != nil {
+			return err
+		}
+		return respDoc(c, query.RequestID, markOk(bson.D{
+			{"nonce", hex.EncodeToString(nonce)},
+		}))
+	case "ping":
+		return respDoc(c, query.RequestID, markOk(nil))
 	}
 	return respError(c, query.RequestID, fmt.Errorf("unsupported admin command: %v", query))
 }
