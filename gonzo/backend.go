@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"strings"
+	"sync"
 
 	"gopkg.in/mgo.v2/bson"
 	"gopkg.in/tomb.v2"
@@ -38,11 +39,15 @@ type Collection interface {
 
 type MemoryCollection struct {
 	docs map[string]bson.M
+
+	mu sync.RWMutex
 }
 
 type MemoryDB struct {
 	collections map[string]*MemoryCollection
 	lastErr     error
+
+	mu sync.RWMutex
 }
 
 func NewMemoryDB() *MemoryDB {
@@ -50,10 +55,14 @@ func NewMemoryDB() *MemoryDB {
 }
 
 func (db *MemoryDB) Empty() bool {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
 	return len(db.collections) == 0
 }
 
 func (db *MemoryDB) CNames() (result []string) {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
 	for cname, _ := range db.collections {
 		result = append(result, cname)
 	}
@@ -61,6 +70,8 @@ func (db *MemoryDB) CNames() (result []string) {
 }
 
 func (db *MemoryDB) C(name string) Collection {
+	db.mu.Lock()
+	defer db.mu.Unlock()
 	result, ok := db.collections[name]
 	if !ok {
 		result = &MemoryCollection{docs: make(map[string]bson.M)}
@@ -69,10 +80,21 @@ func (db *MemoryDB) C(name string) Collection {
 	return result
 }
 
-func (db *MemoryDB) LastError() error       { return db.lastErr }
-func (db *MemoryDB) SetLastError(err error) { db.lastErr = err }
+func (db *MemoryDB) LastError() error {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+	return db.lastErr
+}
+
+func (db *MemoryDB) SetLastError(err error) {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	db.lastErr = err
+}
 
 func (c *MemoryCollection) Id(id string) interface{} {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	for _, item := range c.docs {
 		mitem := item
 		if match, ok := mitem["_id"]; ok && match == id {
@@ -83,6 +105,8 @@ func (c *MemoryCollection) Id(id string) interface{} {
 }
 
 func (c *MemoryCollection) All() (result []interface{}) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	for _, doc := range c.docs {
 		result = append(result, doc)
 	}
@@ -90,6 +114,8 @@ func (c *MemoryCollection) All() (result []interface{}) {
 }
 
 func (c *MemoryCollection) Match(pattern bson.M) (result []interface{}) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	for _, doc := range c.docs {
 		if isPatternMatch(doc, pattern) {
 			result = append(result, doc)
@@ -109,6 +135,8 @@ func isPatternMatch(doc, pattern bson.M) bool {
 }
 
 func (c *MemoryCollection) Insert(doc interface{}) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	mdoc, ok := doc.(bson.M)
 	if !ok {
 		return fmt.Errorf("cannot insert instance of this type: %v", doc)
