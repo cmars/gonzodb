@@ -115,6 +115,10 @@ func (c *MemoryCollection) All() (result []interface{}) {
 }
 
 func (c *MemoryCollection) Match(pattern bson.M) (result []interface{}) {
+	if pattern == nil {
+		return c.All()
+	}
+
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	for _, doc := range c.docs {
@@ -182,6 +186,19 @@ func (b *MemoryBackend) DB(name string) DB {
 	return result
 }
 
+func asBsonM(v interface{}) (bson.M, error) {
+	if v == nil {
+		return nil, nil
+	}
+	switch b := v.(type) {
+	case bson.D:
+		return b.Map(), nil
+	case bson.M:
+		return b, nil
+	}
+	return nil, fmt.Errorf("cannot resolve %q to bson.M", v)
+}
+
 func (b *MemoryBackend) HandleQuery(c net.Conn, query *OpQueryMsg) {
 	if query.FullCollectionName == "admin.$cmd" {
 		err := b.handleAdminCommand(c, query)
@@ -213,14 +230,11 @@ func (b *MemoryBackend) HandleQuery(c net.Conn, query *OpQueryMsg) {
 
 	var results []interface{}
 	if match, ok := query.Get("$query"); ok {
-		if matchM, ok := match.(bson.M); ok {
-			results = append(results, coll.Match(matchM)...)
-		} else if matchD, ok := match.(bson.D); ok {
-			results = append(results, coll.Match(matchD.Map())...)
-		} else {
-			respError(c, query.RequestID, fmt.Errorf("unexpected $query type %v", match))
-			return
+		matchM, err := asBsonM(match)
+		if err != nil {
+			respError(c, query.RequestID, err)
 		}
+		results = append(results, coll.Match(matchM)...)
 	} else if len(query.Doc) == 0 {
 		results = append(results, coll.All()...)
 	} else {
@@ -333,11 +347,26 @@ func (b *MemoryBackend) handleSystemQuery(c net.Conn, query *OpQueryMsg, dbname,
 }
 
 func (b *MemoryBackend) handleDBCommand(c net.Conn, db DB, query *OpQueryMsg) error {
-	switch cmd, _ := query.Command(); cmd {
+	var err error
+	switch cmd, arg := query.Command(); cmd {
 	case "getLastError":
 		fallthrough
 	case "getlasterror":
 		return respError(c, query.RequestID, db.LastError())
+	case "count":
+		cname, ok := arg.(string)
+		if !ok {
+			return respError(c, query.RequestID, fmt.Errorf("malformed count command: %q", query.Doc))
+		}
+		coll := db.C(cname)
+		var matchM bson.M
+		if q, ok := query.Get("query"); ok {
+			matchM, err = asBsonM(q)
+			if err != nil {
+				return respError(c, query.RequestID, err)
+			}
+		}
+		return respDoc(c, query.RequestID, markOk(bson.D{{"n", len(coll.Match(matchM))}}))
 	}
 	return respError(c, query.RequestID, fmt.Errorf("unsupported db command: %v", query))
 }

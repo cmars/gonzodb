@@ -129,3 +129,26 @@ func (s *gonzoSuite) TestGridFSrt(c *gc.C) {
 	_, err = gfs.Open("bar")
 	c.Assert(err, gc.ErrorMatches, "not found")
 }
+
+func (s *gonzoSuite) TestCountUpdateReplace(c *gc.C) {
+	for _, testCase := range queryMatchTestCases {
+		err := s.session.DB("db1").C("c1").Insert(testCase)
+		c.Assert(err, gc.IsNil)
+	}
+
+	n, err := s.session.DB("db1").C("c1").Find(bson.M{"artist": "ed hall"}).Count()
+	c.Assert(err, gc.IsNil)
+	c.Assert(n, gc.Equals, 1)
+
+	err = s.session.DB("db1").C("c1").Update(bson.M{"artist": "ed hall"},
+		bson.D{{"artist", "fugazi"}, {"label", "dischord"}, {"venue", "liberty lunch"}})
+	c.Assert(err, gc.IsNil)
+
+	var result []bson.M
+	err = s.session.DB("db1").C("c1").Find(bson.D{{"artist", "ed hall"}}).All(&result)
+	c.Assert(err, gc.ErrorMatches, "not found")
+	err = s.session.DB("db1").C("c1").Find(bson.D{{"venue", "liberty lunch"}}).All(&result)
+	c.Assert(err, gc.IsNil)
+	c.Assert(result, gc.HasLen, 1)
+	c.Assert(result[0]["artist"], gc.Equals, "fugazi")
+}
