@@ -2,12 +2,6 @@ gonzodb
 =======
 An in-memory data store that speaks enough mongodb protocol to use in place of a live mongodb in your tests.
 
-Why?
-====
-* Testing against a live mongodb makes your tests fragile.
-* Best-case, mocks only provide partial quality assurance while adding maintenance costs.
-* Worst-case, they're a tautological waste of time, effort and code.
-
 Features (planned)
 ==================
 * Designed for testing applications that are hard-coded against the mgo driver.
