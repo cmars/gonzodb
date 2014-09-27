@@ -324,3 +324,71 @@ func (m *OpReplyMsg) Write(w io.Writer) error {
 	m.Header.Length = int32(out.Len() + 16)
 	return m.Header.Write(w)
 }
+
+type UpdateFlags int32
+
+const (
+	UpdateFlagUpsert      = 1 << 0
+	UpdateFlagMultiUpdate = 1 << 1
+)
+
+type OpUpdateMsg struct {
+	*Header
+
+	zero int32
+
+	// "dbname.collectionname"
+	FullCollectionName string
+
+	// Bit vector of update options.
+	Flags UpdateFlags
+
+	// Selector is the query to select the document.
+	Selector bson.M
+
+	// Update is the document update specification.
+	Update bson.M
+}
+
+func NewOpUpdateMsg(h *Header) (*OpUpdateMsg, error) {
+	m := &OpUpdateMsg{Header: h}
+	b := h.Contents
+
+	var ok bool
+
+	if m.zero, b, ok = readInt32(b); !ok {
+		return nil, errTruncMsg
+	}
+
+	if m.FullCollectionName, b, ok = readCstring(b); !ok {
+		return nil, errTruncMsg
+	}
+
+	flags, b, ok := readInt32(b)
+	if !ok {
+		return nil, errTruncMsg
+	} else {
+		m.Flags = UpdateFlags(flags)
+	}
+
+	var err error
+	if len(b) > 0 {
+		m.Selector = make(bson.M)
+		if b, err = readBsonDoc(b, m.Selector); err != nil {
+			return nil, err
+		}
+	} else {
+		return nil, errTruncMsg
+	}
+
+	if len(b) > 0 {
+		m.Update = make(bson.M)
+		if b, err = readBsonDoc(b, m.Update); err != nil {
+			return nil, err
+		}
+	} else {
+		return nil, errTruncMsg
+	}
+
+	return m, nil
+}
