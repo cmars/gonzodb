@@ -332,6 +332,13 @@ const (
 	UpdateFlagMultiUpdate = 1 << 1
 )
 
+type WriteResult struct {
+	NumMatched  int         `bson:"nMatched"`
+	NumUpserted int         `bson:"nUpserted"`
+	NumModified int         `bson:"nModified"`
+	UpsertedId  interface{} `bson:"_id"`
+}
+
 type OpUpdateMsg struct {
 	*Header
 

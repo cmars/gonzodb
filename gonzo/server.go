@@ -108,7 +108,13 @@ func (s *Server) handle(c net.Conn) {
 		switch h.OpCode {
 		//case OpReply:
 		//case OpMsg:
-		//case OpUpdate:
+		case OpUpdate:
+			update, err := NewOpUpdateMsg(h)
+			if err != nil {
+				respError(c, h.RequestID, err)
+				return
+			}
+			s.Backend.HandleUpdate(c, update)
 		case OpInsert:
 			insert, err := NewOpInsertMsg(h)
 			if err != nil {
@@ -116,7 +122,6 @@ func (s *Server) handle(c net.Conn) {
 				return
 			}
 			s.Backend.HandleInsert(c, insert)
-			continue
 		case OpQuery:
 			query, err := NewOpQueryMsg(h)
 			if err != nil {
@@ -124,7 +129,6 @@ func (s *Server) handle(c net.Conn) {
 				return
 			}
 			s.Backend.HandleQuery(c, query)
-			continue
 		//case OpGetMore:
 		//case OpDelete:
 		//case OpKillCursors:

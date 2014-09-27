@@ -16,6 +16,7 @@ import (
 type Backend interface {
 	HandleQuery(c net.Conn, query *OpQueryMsg)
 	HandleInsert(c net.Conn, insert *OpInsertMsg)
+	HandleUpdate(c net.Conn, insert *OpUpdateMsg)
 
 	DBNames() []string
 	DB(name string) DB
@@ -226,6 +227,65 @@ func (b *MemoryBackend) HandleQuery(c net.Conn, query *OpQueryMsg) {
 		results = append(results, coll.Match(query.Doc.Map())...)
 	}
 	respDoc(c, query.RequestID, results...)
+}
+
+func (b *MemoryBackend) HandleUpdate(c net.Conn, update *OpUpdateMsg) {
+	if strings.HasPrefix(update.FullCollectionName, "admin.") {
+		respError(c, update.RequestID, fmt.Errorf("update not supported on admin.*"))
+		return
+	}
+
+	fields := strings.SplitN(update.FullCollectionName, ".", 2)
+	if len(fields) < 2 {
+		respError(c, update.RequestID, fmt.Errorf("malformed full collection name %q", update.FullCollectionName))
+		return
+	}
+	dbname, cname := fields[0], fields[1]
+	if strings.HasPrefix(cname, "system.") {
+		respError(c, update.RequestID, fmt.Errorf("update not supported on %q", update.FullCollectionName))
+		return
+	}
+	db := b.DB(dbname)
+	coll := db.C(cname)
+	matched := coll.Match(update.Selector)
+
+	result := &WriteResult{
+		NumMatched: len(matched),
+	}
+
+	if update.Flags&UpdateFlagMultiUpdate == 0 && len(matched) > 1 {
+		matched = matched[:1]
+	}
+	for _, match := range matched {
+		err := applyUpdate(update.Update, match.(bson.M))
+		if err != nil {
+			respError(c, update.RequestID, err)
+			return
+		}
+		result.NumModified++
+	}
+
+	if update.Flags&UpdateFlagUpsert != 0 && result.NumMatched == 0 {
+		id, ok := update.Update["_id"]
+		if !ok {
+			id = bson.NewObjectId()
+			update.Update["_id"] = id
+		}
+		err := coll.Insert(update.Update)
+		db.SetLastError(err)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		result.UpsertedId = id
+		result.NumUpserted++
+	}
+
+	respDoc(c, update.RequestID, result)
+}
+
+func applyUpdate(spec, target bson.M) error {
+	return fmt.Errorf("applying updates is not yet supported")
 }
 
 func (b *MemoryBackend) HandleInsert(c net.Conn, insert *OpInsertMsg) {
