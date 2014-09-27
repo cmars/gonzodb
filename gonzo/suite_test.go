@@ -110,3 +110,23 @@ func (s *gonzoSuite) TestQueryIter(c *gc.C) {
 	c.Assert(i.Err(), gc.IsNil)
 	c.Assert(i.Close(), gc.IsNil)
 }
+
+func (s *gonzoSuite) TestGridFSrt(c *gc.C) {
+	gfs := s.session.DB("whatfs").GridFS("whatroot")
+
+	fooFile, err := gfs.Create("foo")
+	c.Assert(err, gc.IsNil)
+	_, err = fooFile.Write([]byte("this file contains foo"))
+	c.Assert(err, gc.IsNil)
+	c.Assert(fooFile.Close(), gc.IsNil)
+
+	fooFile, err = gfs.Open("foo")
+	c.Assert(err, gc.IsNil)
+	buf := make([]byte, 200)
+	n, err := fooFile.Read(buf)
+	c.Assert(err, gc.IsNil)
+	c.Assert(string(buf[:n]), gc.Equals, "this file contains foo")
+
+	_, err = gfs.Open("bar")
+	c.Assert(err, gc.ErrorMatches, "not found")
+}

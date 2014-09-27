@@ -212,8 +212,10 @@ func (b *MemoryBackend) HandleQuery(c net.Conn, query *OpQueryMsg) {
 
 	var results []interface{}
 	if match, ok := query.Get("$query"); ok {
-		if matchDoc, ok := match.(bson.M); ok {
-			results = append(results, coll.Match(matchDoc)...)
+		if matchM, ok := match.(bson.M); ok {
+			results = append(results, coll.Match(matchM)...)
+		} else if matchD, ok := match.(bson.D); ok {
+			results = append(results, coll.Match(matchD.Map())...)
 		} else {
 			respError(c, query.RequestID, fmt.Errorf("unexpected $query type %v", match))
 			return
@@ -239,7 +241,7 @@ func (b *MemoryBackend) HandleInsert(c net.Conn, insert *OpInsertMsg) {
 	}
 	dbname, cname := fields[0], fields[1]
 	if strings.HasPrefix(cname, "system.") {
-		respError(c, insert.RequestID, fmt.Errorf("insert not supported on %s.system.*", dbname))
+		respError(c, insert.RequestID, fmt.Errorf("insert %q not supported on %q", insert.Docs, insert.FullCollectionName))
 		return
 	}
 	db := b.DB(dbname)
@@ -252,8 +254,6 @@ func (b *MemoryBackend) HandleInsert(c net.Conn, insert *OpInsertMsg) {
 			return
 		}
 	}
-	//respDoc(c, insert.RequestID, markOk(bson.D{}))
-	// TODO: if err != nil { ... set last error ... }
 }
 
 // TODO: implement Collection interface instead
