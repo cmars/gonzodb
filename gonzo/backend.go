@@ -83,7 +83,6 @@ func (c *MemoryCollection) Id(id string) interface{} {
 }
 
 func (c *MemoryCollection) All() (result []interface{}) {
-	fmt.Println("all called")
 	for _, doc := range c.docs {
 		result = append(result, doc)
 	}
@@ -91,7 +90,6 @@ func (c *MemoryCollection) All() (result []interface{}) {
 }
 
 func (c *MemoryCollection) Match(pattern bson.M) (result []interface{}) {
-	fmt.Println("match called")
 	for _, doc := range c.docs {
 		if isPatternMatch(doc, pattern) {
 			result = append(result, doc)
@@ -156,8 +154,6 @@ func (b *MemoryBackend) DB(name string) DB {
 }
 
 func (b *MemoryBackend) HandleQuery(c net.Conn, query *OpQueryMsg) {
-	log.Println("query:", query)
-
 	if query.FullCollectionName == "admin.$cmd" {
 		err := b.handleAdminCommand(c, query)
 		if err != nil {
@@ -187,7 +183,6 @@ func (b *MemoryBackend) HandleQuery(c net.Conn, query *OpQueryMsg) {
 	coll := db.C(cname)
 
 	var results []interface{}
-	fmt.Println(query)
 	if match, ok := query.Get("$query"); ok {
 		if matchDoc, ok := match.(bson.M); ok {
 			results = append(results, coll.Match(matchDoc)...)

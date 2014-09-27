@@ -83,7 +83,9 @@ func respDoc(w io.Writer, requestID int32, docs ...interface{}) error {
 }
 
 func respError(w io.Writer, requestID int32, err error) error {
-	log.Println(err)
+	if err != nil {
+		log.Println(err)
+	}
 	resp := NewOpReplyMsg(requestID, errReply(err))
 	return resp.Write(w)
 }

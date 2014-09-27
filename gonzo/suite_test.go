@@ -55,17 +55,19 @@ func (s *gonzoSuite) TestInsertQuerySingle(c *gc.C) {
 	c.Assert(ok, gc.Equals, true)
 }
 
-func (s *gonzoSuite) TestInsertQueryMatch(c *gc.C) {
-	err := s.session.DB("db1").C("c1").Insert(
-		bson.D{{"artist", "ed hall"}, {"label", "trance syndicate"}, {"venue", "liberty lunch"}})
-	c.Assert(err, gc.IsNil)
-	err = s.session.DB("db1").C("c1").Insert(
-		bson.D{{"artist", "cherubs"}, {"label", "trance syndicate"}, {"venue", "cavity club"}})
-	c.Assert(err, gc.IsNil)
-	err = s.session.DB("db1").C("c1").Insert(
-		bson.D{{"artist", "the jesus lizard"}, {"label", "touch & go"}, {"venue", "emo's"}})
-	c.Assert(err, gc.IsNil)
+var queryMatchTestCases = []bson.D{
+	bson.D{{"artist", "ed hall"}, {"label", "trance syndicate"}, {"venue", "liberty lunch"}},
+	bson.D{{"artist", "cherubs"}, {"label", "trance syndicate"}, {"venue", "cavity club"}},
+	bson.D{{"artist", "the jesus lizard"}, {"label", "touch & go"}, {"venue", "emo's"}},
+}
 
+func (s *gonzoSuite) TestInsertQueryMatch(c *gc.C) {
+	for _, testCase := range queryMatchTestCases {
+		err := s.session.DB("db1").C("c1").Insert(testCase)
+		c.Assert(err, gc.IsNil)
+	}
+
+	var err error
 	var result []bson.M
 	err = s.session.DB("db1").C("c1").Find(bson.M{"artist": "ed hall"}).All(&result)
 	c.Assert(err, gc.IsNil)
@@ -86,4 +88,25 @@ func (s *gonzoSuite) TestInsertQueryMatch(c *gc.C) {
 	err = s.session.DB("db1").C("c1").Find(nil).All(&result)
 	c.Assert(err, gc.IsNil)
 	c.Assert(result, gc.HasLen, 3)
+}
+
+func (s *gonzoSuite) TestQueryIter(c *gc.C) {
+	count := 1000
+	for i := 0; i < count; i++ {
+		err := s.session.DB("db1").C("c1").Insert(bson.M{"i": i})
+		c.Assert(err, gc.IsNil)
+	}
+
+	i := s.session.DB("db1").C("c1").Find(nil).Iter()
+	var m bson.M
+	n := 0
+	for i.Next(&m) {
+		c.Assert(m, gc.HasLen, 2)
+		_, ok := m["_id"]
+		c.Assert(ok, gc.Equals, true)
+		n++
+	}
+	c.Assert(n, gc.Equals, count)
+	c.Assert(i.Err(), gc.IsNil)
+	c.Assert(i.Close(), gc.IsNil)
 }
