@@ -27,8 +27,8 @@ type DB interface {
 	CNames() []string
 	C(name string) Collection
 
-	LastError() error
-	SetLastError(err error)
+	LastError() interface{}
+	SetLastError(doc interface{})
 }
 
 type Collection interface {
@@ -46,7 +46,7 @@ type MemoryCollection struct {
 
 type MemoryDB struct {
 	collections map[string]*MemoryCollection
-	lastErr     error
+	lastErr     interface{}
 
 	mu sync.RWMutex
 }
@@ -81,16 +81,19 @@ func (db *MemoryDB) C(name string) Collection {
 	return result
 }
 
-func (db *MemoryDB) LastError() error {
+func (db *MemoryDB) LastError() interface{} {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 	return db.lastErr
 }
 
-func (db *MemoryDB) SetLastError(err error) {
+func (db *MemoryDB) SetLastError(doc interface{}) {
 	db.mu.Lock()
 	defer db.mu.Unlock()
-	db.lastErr = err
+	if doc == nil {
+		doc = bson.D{}
+	}
+	db.lastErr = doc
 }
 
 func (c *MemoryCollection) Id(id string) interface{} {
@@ -263,43 +266,81 @@ func (b *MemoryBackend) HandleUpdate(c net.Conn, update *OpUpdateMsg) {
 	coll := db.C(cname)
 	matched := coll.Match(update.Selector)
 
-	result := &WriteResult{
-		NumMatched: len(matched),
-	}
-
 	if update.Flags&UpdateFlagMultiUpdate == 0 && len(matched) > 1 {
 		matched = matched[:1]
 	}
+
+	result := &WriteResult{
+		N: len(matched),
+	}
+
 	for _, match := range matched {
 		err := applyUpdate(update.Update, match.(bson.M))
 		if err != nil {
 			respError(c, update.RequestID, err)
 			return
 		}
-		result.NumModified++
+		result.UpdatedExisting = true
 	}
 
-	if update.Flags&UpdateFlagUpsert != 0 && result.NumMatched == 0 {
+	if update.Flags&UpdateFlagUpsert != 0 && result.N == 0 {
 		id, ok := update.Update["_id"]
 		if !ok {
 			id = bson.NewObjectId()
 			update.Update["_id"] = id
 		}
 		err := coll.Insert(update.Update)
-		db.SetLastError(err)
 		if err != nil {
-			log.Println(err)
+			db.SetLastError(errReply(err))
 			return
 		}
-		result.UpsertedId = id
-		result.NumUpserted++
+		result.Upserted = id
 	}
-
-	respDoc(c, update.RequestID, result)
+	db.SetLastError(result)
 }
 
 func applyUpdate(spec, target bson.M) error {
-	return fmt.Errorf("applying updates is not yet supported")
+	replace := false
+	for k, v := range spec {
+		unsuppErr := fmt.Errorf("unsupported update operator: %q", k)
+		switch k {
+		case "$currentDate":
+			return unsuppErr
+		case "$inc":
+			return unsuppErr
+		case "$max":
+			return unsuppErr
+		case "$min":
+			return unsuppErr
+		case "$mul":
+			return unsuppErr
+		case "$rename":
+			return unsuppErr
+		case "$setOnInsert":
+			return unsuppErr
+		case "$set":
+			set, err := asBsonM(v)
+			if err != nil {
+				return err
+			}
+			for setK, setV := range set {
+				target[setK] = setV
+			}
+		case "$unset":
+			return unsuppErr
+		default:
+			if !replace {
+				replace = true
+				for tk, _ := range target {
+					if tk != "_id" {
+						delete(target, tk)
+					}
+				}
+			}
+			target[k] = v
+		}
+	}
+	return nil
 }
 
 func (b *MemoryBackend) HandleInsert(c net.Conn, insert *OpInsertMsg) {
@@ -324,7 +365,6 @@ func (b *MemoryBackend) HandleInsert(c net.Conn, insert *OpInsertMsg) {
 		err := coll.Insert(doc)
 		db.SetLastError(err)
 		if err != nil {
-			log.Println(err)
 			return
 		}
 	}
@@ -332,7 +372,6 @@ func (b *MemoryBackend) HandleInsert(c net.Conn, insert *OpInsertMsg) {
 
 // TODO: implement Collection interface instead
 func (b *MemoryBackend) handleSystemQuery(c net.Conn, query *OpQueryMsg, dbname, cname string) {
-	log.Println("system query:", dbname, cname, query.Doc)
 	switch cname {
 	case "system.namespaces":
 		var result []interface{}
@@ -352,7 +391,7 @@ func (b *MemoryBackend) handleDBCommand(c net.Conn, db DB, query *OpQueryMsg) er
 	case "getLastError":
 		fallthrough
 	case "getlasterror":
-		return respError(c, query.RequestID, db.LastError())
+		return respDoc(c, query.RequestID, db.LastError())
 	case "count":
 		cname, ok := arg.(string)
 		if !ok {

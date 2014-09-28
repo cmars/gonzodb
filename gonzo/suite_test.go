@@ -146,7 +146,9 @@ func (s *gonzoSuite) TestCountUpdateReplace(c *gc.C) {
 
 	var result []bson.M
 	err = s.session.DB("db1").C("c1").Find(bson.D{{"artist", "ed hall"}}).All(&result)
-	c.Assert(err, gc.ErrorMatches, "not found")
+	c.Assert(err, gc.IsNil)
+	c.Assert(result, gc.HasLen, 0)
+
 	err = s.session.DB("db1").C("c1").Find(bson.D{{"venue", "liberty lunch"}}).All(&result)
 	c.Assert(err, gc.IsNil)
 	c.Assert(result, gc.HasLen, 1)

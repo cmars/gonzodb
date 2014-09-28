@@ -333,10 +333,9 @@ const (
 )
 
 type WriteResult struct {
-	NumMatched  int         `bson:"nMatched"`
-	NumUpserted int         `bson:"nUpserted"`
-	NumModified int         `bson:"nModified"`
-	UpsertedId  interface{} `bson:"_id"`
+	N               int         `bson:"n"`
+	UpdatedExisting bool        `bson:"updatedExisting"`
+	Upserted        interface{} `bson:"upserted"`
 }
 
 type OpUpdateMsg struct {
