@@ -154,3 +154,79 @@ func (s *gonzoSuite) TestCountUpdateReplace(c *gc.C) {
 	c.Assert(result, gc.HasLen, 1)
 	c.Assert(result[0]["artist"], gc.Equals, "fugazi")
 }
+
+func (s *gonzoSuite) TestUpdateSet(c *gc.C) {
+	for _, testCase := range queryMatchTestCases {
+		err := s.session.DB("db1").C("c1").Insert(testCase)
+		c.Assert(err, gc.IsNil)
+	}
+
+	var result []bson.M
+	err := s.session.DB("db1").C("c1").Find(bson.D{{"artist", "ed hall"}}).All(&result)
+	c.Assert(err, gc.IsNil)
+	c.Assert(result, gc.HasLen, 1)
+	c.Assert(result[0]["city"], gc.IsNil)
+
+	err = s.session.DB("db1").C("c1").Update(bson.M{"artist": "ed hall"},
+		bson.D{{"$set", bson.D{{"city", "austin"}}}})
+	c.Assert(err, gc.IsNil)
+
+	err = s.session.DB("db1").C("c1").Find(bson.D{{"artist", "ed hall"}}).All(&result)
+	c.Assert(err, gc.IsNil)
+	c.Assert(result, gc.HasLen, 1)
+	c.Assert(result[0]["city"], gc.Equals, "austin")
+}
+
+func (s *gonzoSuite) TestUpsert(c *gc.C) {
+	for _, testCase := range queryMatchTestCases {
+		err := s.session.DB("db1").C("c1").Insert(testCase)
+		c.Assert(err, gc.IsNil)
+	}
+
+	n, err := s.session.DB("db1").C("c1").Find(nil).Count()
+	c.Assert(err, gc.IsNil)
+	c.Assert(n, gc.Equals, 3)
+
+	_, err = s.session.DB("db1").C("c1").Upsert(bson.M{"artist": "raveonettes"},
+		bson.M{
+			"artist": "raveonettes",
+			"venue":  "la zona rosa",
+		})
+	c.Assert(err, gc.IsNil)
+
+	n, err = s.session.DB("db1").C("c1").Find(nil).Count()
+	c.Assert(err, gc.IsNil)
+	c.Assert(n, gc.Equals, 4)
+
+	_, err = s.session.DB("db1").C("c1").Upsert(bson.M{"artist": "raveonettes"},
+		bson.M{
+			"artist": "raveonettes",
+			"venue":  "la zona rosa",
+			"album":  "whip it on",
+		})
+	c.Assert(err, gc.IsNil)
+
+	n, err = s.session.DB("db1").C("c1").Find(nil).Count()
+	c.Assert(err, gc.IsNil)
+	c.Assert(n, gc.Equals, 4)
+
+	var result []bson.M
+	err = s.session.DB("db1").C("c1").Find(bson.M{"artist": "raveonettes"}).All(&result)
+	c.Assert(err, gc.IsNil)
+	c.Assert(result, gc.HasLen, 1)
+	c.Assert(result[0]["album"], gc.Equals, "whip it on")
+}
+
+func (s *gonzoSuite) TestDelete(c *gc.C) {
+	for _, testCase := range queryMatchTestCases {
+		err := s.session.DB("db1").C("c1").Insert(testCase)
+		c.Assert(err, gc.IsNil)
+	}
+
+	n, err := s.session.DB("db1").C("c1").Find(nil).Count()
+	c.Assert(err, gc.IsNil)
+	c.Assert(n, gc.Equals, 3)
+
+	err = s.session.DB("db1").C("c1").Remove(bson.M{"artist": "cherubs"})
+	c.Assert(err, gc.IsNil)
+}

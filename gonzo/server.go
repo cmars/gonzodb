@@ -130,7 +130,13 @@ func (s *Server) handle(c net.Conn) {
 			}
 			s.Backend.HandleQuery(c, query)
 		//case OpGetMore:
-		//case OpDelete:
+		case OpDelete:
+			deleteMsg, err := NewOpDeleteMsg(h)
+			if err != nil {
+				respError(c, h.RequestID, err)
+				return
+			}
+			s.Backend.HandleDelete(c, deleteMsg)
 		//case OpKillCursors:
 		default:
 			err := fmt.Errorf("unsupported op code %d", h.OpCode)

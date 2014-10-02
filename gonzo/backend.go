@@ -16,7 +16,8 @@ import (
 type Backend interface {
 	HandleQuery(c net.Conn, query *OpQueryMsg)
 	HandleInsert(c net.Conn, insert *OpInsertMsg)
-	HandleUpdate(c net.Conn, insert *OpUpdateMsg)
+	HandleUpdate(c net.Conn, deleteMsg *OpUpdateMsg)
+	HandleDelete(c net.Conn, insert *OpDeleteMsg)
 
 	DBNames() []string
 	DB(name string) DB
@@ -36,6 +37,7 @@ type Collection interface {
 	All() []interface{}
 	Match(pattern bson.M) []interface{}
 	Insert(item interface{}) error
+	Delete(pattern bson.M, limit int) int
 }
 
 type MemoryCollection struct {
@@ -130,6 +132,24 @@ func (c *MemoryCollection) Match(pattern bson.M) (result []interface{}) {
 		}
 	}
 	return result
+}
+
+func (c *MemoryCollection) Delete(pattern bson.M, limit int) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var removeIds []string
+	for id, doc := range c.docs {
+		if isPatternMatch(doc, pattern) {
+			removeIds = append(removeIds, id)
+			if limit > 0 && limit >= len(removeIds) {
+				break
+			}
+		}
+	}
+	for _, id := range removeIds {
+		delete(c.docs, id)
+	}
+	return len(removeIds)
 }
 
 func isPatternMatch(doc, pattern bson.M) bool {
@@ -341,6 +361,35 @@ func applyUpdate(spec, target bson.M) error {
 		}
 	}
 	return nil
+}
+
+func (b *MemoryBackend) HandleDelete(c net.Conn, deleteMsg *OpDeleteMsg) {
+	if strings.HasPrefix(deleteMsg.FullCollectionName, "admin.") {
+		respError(c, deleteMsg.RequestID, fmt.Errorf("delete not supported on admin.*"))
+		return
+	}
+
+	fields := strings.SplitN(deleteMsg.FullCollectionName, ".", 2)
+	if len(fields) < 2 {
+		respError(c, deleteMsg.RequestID, fmt.Errorf("malformed full collection name %q", deleteMsg.FullCollectionName))
+		return
+	}
+	dbname, cname := fields[0], fields[1]
+	if strings.HasPrefix(cname, "system.") {
+		respError(c, deleteMsg.RequestID, fmt.Errorf("delete %q not supported on %q", deleteMsg.Selector, deleteMsg.FullCollectionName))
+		return
+	}
+	db := b.DB(dbname)
+	coll := db.C(cname)
+	limit := 0
+	if deleteMsg.Flags&DeleteFlagSingleRemove != 0 {
+		limit = 1
+	}
+	n := coll.Delete(deleteMsg.Selector, limit)
+	// TODO: enforce safe mode with int result of the above
+	db.SetLastError(&WriteResult{
+		N: n,
+	})
 }
 
 func (b *MemoryBackend) HandleInsert(c net.Conn, insert *OpInsertMsg) {

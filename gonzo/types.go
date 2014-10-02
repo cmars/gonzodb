@@ -398,3 +398,58 @@ func NewOpUpdateMsg(h *Header) (*OpUpdateMsg, error) {
 
 	return m, nil
 }
+
+type DeleteFlags int32
+
+const (
+	DeleteFlagSingleRemove = 1 << 0
+)
+
+type OpDeleteMsg struct {
+	*Header
+
+	zero int32
+
+	// "dbname.collectionname"
+	FullCollectionName string
+
+	// Bit vector of update options.
+	Flags DeleteFlags
+
+	// Selector matches the documents to delete.
+	Selector bson.M
+}
+
+func NewOpDeleteMsg(h *Header) (*OpDeleteMsg, error) {
+	m := &OpDeleteMsg{Header: h}
+	b := h.Contents
+
+	var ok bool
+
+	if m.zero, b, ok = readInt32(b); !ok {
+		return nil, errTruncMsg
+	}
+
+	if m.FullCollectionName, b, ok = readCstring(b); !ok {
+		return nil, errTruncMsg
+	}
+
+	flags, b, ok := readInt32(b)
+	if !ok {
+		return nil, errTruncMsg
+	} else {
+		m.Flags = DeleteFlags(flags)
+	}
+
+	var err error
+	if len(b) > 0 {
+		m.Selector = make(bson.M)
+		if b, err = readBsonDoc(b, m.Selector); err != nil {
+			return nil, err
+		}
+	} else {
+		return nil, errTruncMsg
+	}
+
+	return m, nil
+}
