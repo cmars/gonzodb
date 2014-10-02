@@ -16,8 +16,8 @@ import (
 type Backend interface {
 	HandleQuery(c net.Conn, query *OpQueryMsg)
 	HandleInsert(c net.Conn, insert *OpInsertMsg)
-	HandleUpdate(c net.Conn, deleteMsg *OpUpdateMsg)
-	HandleDelete(c net.Conn, insert *OpDeleteMsg)
+	HandleUpdate(c net.Conn, update *OpUpdateMsg)
+	HandleDelete(c net.Conn, deleteMsg *OpDeleteMsg)
 
 	DBNames() []string
 	DB(name string) DB
