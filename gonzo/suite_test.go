@@ -229,4 +229,12 @@ func (s *gonzoSuite) TestDelete(c *gc.C) {
 
 	err = s.session.DB("db1").C("c1").Remove(bson.M{"artist": "cherubs"})
 	c.Assert(err, gc.IsNil)
+
+	n, err = s.session.DB("db1").C("c1").Find(nil).Count()
+	c.Assert(err, gc.IsNil)
+	c.Assert(n, gc.Equals, 2)
+
+	var result bson.M
+	err = s.session.DB("db1").C("c1").Find(bson.M{"artist": "cherubs"}).One(&result)
+	c.Assert(err, gc.ErrorMatches, "not found")
 }
