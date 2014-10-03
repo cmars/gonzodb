@@ -38,4 +38,7 @@ BACKLOG
 Resources
 =========
 * http://docs.mongodb.org/meta-driver/latest/legacy/mongodb-wire-protocol/
+
+Other in-memory MongoDB protocol servers:
 * https://github.com/bwaldvogel/mongo-java-server
+* https://github.com/rick446/MongoTools/blob/master/mongotools/mim/mim.py
