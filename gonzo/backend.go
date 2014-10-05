@@ -441,6 +441,18 @@ func (b *MemoryBackend) handleDBCommand(c net.Conn, db DB, query *OpQueryMsg) er
 		fallthrough
 	case "getlasterror":
 		return respDoc(c, query.RequestID, db.LastError())
+	case "getnonce":
+		nonce := make([]byte, 32)
+		_, err := rand.Reader.Read(nonce[:])
+		if err != nil {
+			return err
+		}
+		return respDoc(c, query.RequestID, markOk(bson.D{
+			{"nonce", hex.EncodeToString(nonce)},
+		}))
+	case "authenticate":
+		// It's a test database, let everyone in.
+		return respDoc(c, query.RequestID, markOk(nil))
 	case "count":
 		cname, ok := arg.(string)
 		if !ok {
