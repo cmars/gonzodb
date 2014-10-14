@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/cmars/gonzodb.svg?branch=master)](https://travis-ci.org/cmars/gonzodb)
+
 gonzodb
 =======
 An in-memory data store that speaks enough mongodb protocol to use in place of a live mongodb in your tests.
